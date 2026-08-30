@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CHROMA — a color-stealth game</title>
+<style>
+  :root{
+    --bg:#0a0c10;
+    --panel:#12151c;
+    --panel-edge:#1e2230;
+    --text:#e8ecf1;
+    --muted:#7c8797;
+    --accent:#a55eea;
+    --danger:#ff4757;
+    --success:#2ed573;
+    --c-red:#ff4757;
+    --c-blue:#2f6fed;
+    --c-green:#2ed573;
+    --c-yellow:#ffd32a;
+    --c-purple:#a55eea;
+    --mono: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0; padding:0; height:100%;
+    background:
+      radial-gradient(circle at 20% 10%, rgba(165,94,234,0.08), transparent 45%),
+      radial-gradient(circle at 80% 90%, rgba(47,111,237,0.08), transparent 45%),
+      var(--bg);
+    color:var(--text);
+    font-family:var(--sans);
+    overflow:hidden;
+  }
+  .stage{
+    height:100%;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:14px;
+    padding:16px;
+  }
+  .title{
+    font-family:var(--mono);
+    letter-spacing:0.5em;
+    font-size:15px;
+    font-weight:700;
+    color:var(--text);
+    text-shadow:0 0 18px rgba(165,94,234,0.55), 0 0 2px rgba(255,255,255,0.4);
+    margin:0;
+    user-select:none;
+  }
+  .title span{color:var(--accent);}
+
+  .hud{
+    width:840px;
+    max-width:100%;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    background:var(--panel);
+    border:1px solid var(--panel-edge);
+    border-radius:10px;
+    padding:10px 16px;
+    font-family:var(--mono);
+    font-size:12.5px;
+    letter-spacing:0.03em;
+  }
+  .hud-group{display:flex; align-items:center; gap:16px;}
+  .hud-stat .label{color:var(--muted); margin-right:6px;}
+  .hud-stat .value{color:var(--text); font-weight:700;}
+  #statusValue.hidden-state{color:var(--success);}
+  #statusValue.exposed-state{color:var(--danger); text-shadow:0 0 8px rgba(255,71,87,0.7);}
+
+  .shift-bar-wrap{
+    width:70px; height:5px;
+    background:rgba(255,255,255,0.08);
+    border-radius:3px;
+    overflow:hidden;
+    margin-left:10px;
+  }
+  .shift-bar{
+    height:100%;
+    width:100%;
+    background:var(--accent);
+    transform-origin:left center;
+    transition:background-color .15s linear;
+  }
+  .swatches{display:flex; gap:6px; align-items:center;}
+  .swatch{
+    width:16px; height:16px; border-radius:4px;
+    border:2px solid rgba(255,255,255,0.12);
+    opacity:0.45;
+    transition:transform .15s ease, opacity .15s ease, box-shadow .15s ease;
+  }
+  .swatch.active{
+    opacity:1;
+    transform:scale(1.22);
+    border-color:rgba(255,255,255,0.85);
+  }
+
+  .board-wrap{
+    position:relative;
+    border-radius:12px;
+    border:1px solid var(--panel-edge);
+    box-shadow:0 0 0 1px rgba(0,0,0,0.4), 0 20px 60px rgba(0,0,0,0.55);
+    overflow:hidden;
+  }
+  canvas{display:block; background:#000;}
+
+  .hint{
+    font-family:var(--mono);
+    font-size:11px;
+    color:var(--muted);
+    letter-spacing:0.04em;
+    text-align:center;
+  }
+  .hint b{color:var(--text);}
+
+  .overlay{
+    position:absolute; inset:0;
+    background:rgba(6,7,10,0.86);
+    backdrop-filter:blur(6px);
+    display:flex; align-items:center; justify-content:center;
+    z-index:20;
+  }
+  .overlay.hidden{display:none;}
+  .card{
+    width:520px;
+    max-width:88vw;
+    background:var(--panel);
+    border:1px solid var(--panel-edge);
+    border-radius:14px;
+    padding:30px 32px;
+    text-align:left;
+    box-shadow:0 30px 80px rgba(0,0,0,0.6);
+  }
+  .card h2{
+    font-family:var(--mono);
+    letter-spacing:0.12em;
+    font-size:22px;
+    margin:0 0 14px 0;
+  }
+  .card p{
+    font-size:14px;
+    line-height:1.6;
+    color:#c7cedb;
+    margin:0 0 10px 0;
+  }
+  .card ul{margin:0 0 18px 0; padding-left:18px; font-size:13.5px; color:#c7cedb; line-height:1.7;}
+  .card ul li b{color:var(--text);}
+  .legend-row{display:flex; gap:8px; margin:14px 0 20px 0; flex-wrap:wrap;}
+  .legend-chip{
+    display:flex; align-items:center; gap:6px;
+    font-family:var(--mono); font-size:11px; color:var(--muted);
+    background:rgba(255,255,255,0.03);
+    border:1px solid var(--panel-edge);
+    padding:5px 9px; border-radius:20px;
+  }
+  .legend-dot{width:10px; height:10px; border-radius:3px;}
+
+  .btn{
+    font-family:var(--mono);
+    font-size:13px;
+    letter-spacing:0.06em;
+    background:var(--accent);
+    color:#0a0c10;
+    border:none;
+    padding:11px 22px;
+    border-radius:8px;
+    cursor:pointer;
+    font-weight:700;
+    transition:transform .12s ease, box-shadow .12s ease, filter .12s ease;
+  }
+  .btn:hover{filter:brightness(1.1); transform:translateY(-1px);}
+  .btn:active{transform:translateY(0);}
+  .btn.danger{background:var(--danger); color:#1a0507;}
+  .btn.success{background:var(--success); color:#04170c;}
+
+  .result-icon{
+    font-family:var(--mono);
+    font-size:13px;
+    color:var(--muted);
+    margin-bottom:4px;
+    letter-spacing:0.15em;
+  }
+  .result-stats{
+    display:flex; gap:22px;
+    margin:16px 0 22px 0;
+    font-family:var(--mono);
+  }
+  .result-stats div span{display:block;}
+  .result-stats .rlabel{font-size:10.5px; color:var(--muted); letter-spacing:0.1em;}
+  .result-stats .rvalue{font-size:20px; font-weight:700; margin-top:2px;}
+</style>
+</head>
+<body>
+
+<div class="stage">
+  <h1 class="title">CHROM<span>A</span></h1>
+
+  <div class="hud">
+    <div class="hud-group">
+      <div class="hud-stat"><span class="label">TIME</span><span class="value" id="timeValue">00:00</span></div>
+      <div class="hud-stat"><span class="label">MOVES</span><span class="value" id="movesValue">0</span></div>
+      <div class="hud-stat"><span class="label">STATUS</span><span class="value" id="statusValue">—</span></div>
+    </div>
+    <div class="hud-group">
+      <span class="label" style="font-family:var(--mono); color:var(--muted);">COLOR</span>
+      <div class="swatches" id="swatchRow"></div>
+      <div class="shift-bar-wrap"><div class="shift-bar" id="shiftBar"></div></div>
+    </div>
+  </div>
+
+  <div class="board-wrap">
+    <canvas id="game" width="840" height="560"></canvas>
+
+    <!-- Instructions overlay -->
+    <div class="overlay" id="introOverlay">
+      <div class="card">
+        <h2>CHROM<span style="color:var(--accent)">A</span></h2>
+        <p>You are a dot. The floor is a patchwork of colored zones. When your color <b>matches</b> the zone beneath you, you're camouflaged — guards can't see you, even up close. When it <b>doesn't</b> match, you're exposed.</p>
+        <ul>
+          <li><b>Move</b> — WASD or Arrow Keys</li>
+          <li><b>Your color shifts on its own, at random</b> — both the timing and the next color are unpredictable. Watch the bar next to the swatches: its length shows time left, and its color previews what you're about to become.</li>
+          <li><b>Guards</b> patrol fixed routes. Their translucent cone is their vision. If you're exposed inside it, they'll spot you and give chase.</li>
+          <li><b>Caught while exposed</b> = game over. Touching a guard while camouflaged is safe.</li>
+          <li>Reach the glowing <b>exit</b> tile to win.</li>
+        </ul>
+        <div class="legend-row" id="legendRow"></div>
+        <button class="btn" id="startBtn">START</button>
+      </div>
+    </div>
+
+    <!-- Lose overlay -->
+    <div class="overlay hidden" id="loseOverlay">
+      <div class="card">
+        <div class="result-icon">// DETECTED</div>
+        <h2 style="color:var(--danger)">Caught!</h2>
+        <p>A guard spotted you while you were exposed. The zone map resets — try matching color before you cross open ground.</p>
+        <div class="result-stats">
+          <div><span class="rlabel">TIME SURVIVED</span><span class="rvalue" id="loseTime">00:00</span></div>
+          <div><span class="rlabel">MOVES MADE</span><span class="rvalue" id="loseMoves">0</span></div>
+        </div>
+        <button class="btn danger" id="restartLoseBtn">RESTART</button>
+      </div>
+    </div>
+
+    <!-- Win overlay -->
+    <div class="overlay hidden" id="winOverlay">
+      <div class="card">
+        <div class="result-icon">// EXIT REACHED</div>
+        <h2 style="color:var(--success)">You Escaped!</h2>
+        <p>Clean getaway. Nobody ever saw your real color.</p>
+        <div class="result-stats">
+          <div><span class="rlabel">FINAL TIME</span><span class="rvalue" id="winTime">00:00</span></div>
+          <div><span class="rlabel">TOTAL MOVES</span><span class="rvalue" id="winMoves">0</span></div>
+        </div>
+        <button class="btn success" id="restartWinBtn">PLAY AGAIN</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="hint">Your color shifts on its own — be standing in a matching zone when it does. Watch the cones. <b>WASD/Arrows</b> move. Reach the glowing exit to win.</div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ============================================================
+  //  LEVEL BUILDER — everything about the arena, guards and
+  //  difficulty lives here. Edit these values/arrays to build
+  //  a new level without touching the game loop below.
+  // ============================================================
+
+  const CONFIG = {
+    cols: 24,
+    rows: 16,
+    cellSize: 35,
+    playerSpeed: 2.35,        // px / frame
+    guardPatrolSpeed: 1.15,   // px / frame
+    guardChaseSpeed: 3.15,    // px / frame — faster once alerted, closes distance quickly
+    visionRadius: 140,        // px
+    coneHalfAngleDeg: 38,     // total cone = 2x this
+    catchRadius: 16,          // px
+    colorAutoIntervalMinMs: 1600, // shortest possible time before the color shifts again
+    colorAutoIntervalMaxMs: 3400, // longest possible time before the color shifts again
+    searchDurationMs: 1700,   // how long a guard hunts last-known position before giving up
+    waypointArriveDist: 4
+  };
+
+  // Five zone colors the player can cycle through.
+  const COLORS = [
+    { id:"red",    hex:"#ff4757" },
+    { id:"blue",   hex:"#2f6fed" },
+    { id:"green",  hex:"#2ed573" },
+    { id:"yellow", hex:"#ffd32a" },
+    { id:"purple", hex:"#a55eea" }
+  ];
+
+  // Zones are painted as rectangles (grid coords) in order — later
+  // rectangles overwrite earlier ones, which is how irregular composite
+  // shapes and connecting corridors are formed from simple rects.
+  // {id, x, y, w, h}  (x,y,w,h are in GRID CELLS, not pixels)
+  const ZONE_RECTS = [
+    { id:"red",    x:0,  y:0, w:24, h:16 },  // base fill -> becomes the connecting corridors
+    { id:"blue",   x:0,  y:0, w:10, h:7  },  // top-left block
+    { id:"green",  x:14, y:0, w:10, h:6  },  // top-right block
+    { id:"yellow", x:8,  y:9, w:16, h:7  },  // bottom-right block
+    { id:"purple", x:0,  y:9, w:9,  h:7  }   // bottom-left block
+  ];
+
+  // Player + goal spawn points, in grid cells.
+  const PLAYER_START = { gx:1, gy:1 };
+  const GOAL_CELL = { gx:22, gy:14 };
+
+  // Guards: each patrols back and forth between waypoints (grid cells).
+  // More waypoints = longer patrol loop. Order matters (ping-pong between them).
+  const GUARD_DEFS = [
+    { waypoints:[{gx:2,gy:7},{gx:12,gy:7}] },   // watches left half of the middle corridor
+    { waypoints:[{gx:12,gy:8},{gx:22,gy:8}] },  // watches right half of the middle corridor
+    { waypoints:[{gx:11,gy:0},{gx:11,gy:6}] },  // watches the vertical connector up top
+    { waypoints:[{gx:18,gy:12},{gx:22,gy:12}] } // guards the final approach to the exit
+  ];
+
+  // ============================================================
+  //  END LEVEL BUILDER
+  // ============================================================
+
+  const canvas = document.getElementById("game");
+  const ctx = canvas.getContext("2d");
+  const CELL = CONFIG.cellSize;
+
+  // ---- Build the zone grid from ZONE_RECTS ----
+  function buildZoneGrid(){
+    const grid = [];
+    for(let r=0; r<CONFIG.rows; r++){
+      grid.push(new Array(CONFIG.cols).fill(ZONE_RECTS[0].id));
+    }
+    for(const rect of ZONE_RECTS){
+      for(let r=rect.y; r<rect.y+rect.h; r++){
+        for(let c=rect.x; c<rect.x+rect.w; c++){
+          if(r>=0 && r<CONFIG.rows && c>=0 && c<CONFIG.cols){
+            grid[r][c] = rect.id;
+          }
+        }
+      }
+    }
+    return grid;
+  }
+  const zoneGrid = buildZoneGrid();
+
+  function colorHex(id){
+    const c = COLORS.find(c=>c.id===id);
+    return c ? c.hex : "#ffffff";
+  }
+
+  function zoneAtPixel(px, py){
+    let c = Math.floor(px / CELL);
+    let r = Math.floor(py / CELL);
+    c = Math.max(0, Math.min(CONFIG.cols-1, c));
+    r = Math.max(0, Math.min(CONFIG.rows-1, r));
+    return zoneGrid[r][c];
+  }
+
+  function gridToPixelCenter(gx, gy){
+    return { x: gx*CELL + CELL/2, y: gy*CELL + CELL/2 };
+  }
+
+  // ---- Pre-render the static zone floor to an offscreen canvas ----
+  const zoneCanvas = document.createElement("canvas");
+  zoneCanvas.width = canvas.width;
+  zoneCanvas.height = canvas.height;
+  (function renderZones(){
+    const zctx = zoneCanvas.getContext("2d");
+    for(let r=0; r<CONFIG.rows; r++){
+      for(let c=0; c<CONFIG.cols; c++){
+        zctx.fillStyle = colorHex(zoneGrid[r][c]);
+        zctx.fillRect(c*CELL, r*CELL, CELL, CELL);
+      }
+    }
+    // subtle grid lines for readability
+    zctx.strokeStyle = "rgba(0,0,0,0.16)";
+    zctx.lineWidth = 1;
+    for(let c=0; c<=CONFIG.cols; c++){
+      zctx.beginPath(); zctx.moveTo(c*CELL,0); zctx.lineTo(c*CELL, canvas.height); zctx.stroke();
+    }
+    for(let r=0; r<=CONFIG.rows; r++){
+      zctx.beginPath(); zctx.moveTo(0,r*CELL); zctx.lineTo(canvas.width, r*CELL); zctx.stroke();
+    }
+    // faint vignette
+    const grad = zctx.createRadialGradient(
+      canvas.width/2, canvas.height/2, canvas.height*0.25,
+      canvas.width/2, canvas.height/2, canvas.height*0.75
+    );
+    grad.addColorStop(0, "rgba(0,0,0,0)");
+    grad.addColorStop(1, "rgba(0,0,0,0.25)");
+    zctx.fillStyle = grad;
+    zctx.fillRect(0,0,canvas.width, canvas.height);
+  })();
+
+  // ---- Game state ----
+  const goalPx = gridToPixelCenter(GOAL_CELL.gx, GOAL_CELL.gy);
+  const startPx = gridToPixelCenter(PLAYER_START.gx, PLAYER_START.gy);
+
+  let player, guards, keys, gameState, startTime, elapsedMs, moveCount, distanceAccum, nextColorChangeAt, currentShiftIntervalMs, nextColorIndex;
+
+  // Picks a random interval + a random *different* upcoming color, and
+  // schedules the next automatic shift. Called at game start, restart,
+  // and every time a shift fires.
+  function scheduleNextShift(){
+    currentShiftIntervalMs = CONFIG.colorAutoIntervalMinMs +
+      Math.random() * (CONFIG.colorAutoIntervalMaxMs - CONFIG.colorAutoIntervalMinMs);
+    nextColorChangeAt = performance.now() + currentShiftIntervalMs;
+    do {
+      nextColorIndex = Math.floor(Math.random() * COLORS.length);
+    } while (nextColorIndex === player.colorIndex);
+  }
+
+  function resetGame(){
+    player = {
+      x: startPx.x, y: startPx.y,
+      radius: 10,
+      colorIndex: 1 // starts as blue, matching the start zone
+    };
+    guards = GUARD_DEFS.map(def => {
+      const wps = def.waypoints.map(w => gridToPixelCenter(w.gx, w.gy));
+      return {
+        waypoints: wps,
+        targetIndex: 1,
+        x: wps[0].x, y: wps[0].y,
+        facing: { x:1, y:0 },
+        state: "patrol", // patrol | chase | search
+        lastSeen: null,
+        searchUntil: 0,
+        alertPulse: 0
+      };
+    });
+    keys = {};
+    gameState = "intro"; // intro | playing | won | lost
+    startTime = null;
+    elapsedMs = 0;
+    moveCount = 0;
+    distanceAccum = 0;
+    nextColorChangeAt = null; // set once play starts, see scheduleNextShift()
+    updateHUD(true);
+  }
+
+  // ---- Input ----
+  const MOVE_KEYS = new Set(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","w","a","s","d","W","A","S","D"]);
+  window.addEventListener("keydown", (e)=>{
+    if(MOVE_KEYS.has(e.key)) e.preventDefault();
+    keys[e.key] = true;
+  });
+  window.addEventListener("keyup", (e)=>{
+    keys[e.key] = false;
+  });
+
+  // ---- HUD wiring ----
+  const swatchRow = document.getElementById("swatchRow");
+  const legendRow = document.getElementById("legendRow");
+  COLORS.forEach((c, i)=>{
+    const sw = document.createElement("div");
+    sw.className = "swatch";
+    sw.style.background = c.hex;
+    sw.dataset.index = i;
+    swatchRow.appendChild(sw);
+
+    const chip = document.createElement("div");
+    chip.className = "legend-chip";
+    chip.innerHTML = `<span class="legend-dot" style="background:${c.hex}"></span>${c.id}`;
+    legendRow.appendChild(chip);
+  });
+
+  const timeValue = document.getElementById("timeValue");
+  const movesValue = document.getElementById("movesValue");
+  const statusValue = document.getElementById("statusValue");
+  const shiftBar = document.getElementById("shiftBar");
+
+  function isPlayerHidden(){
+    const zone = zoneAtPixel(player.x, player.y);
+    return COLORS[player.colorIndex].id === zone;
+  }
+
+  function updateHUD(force){
+    // swatches
+    [...swatchRow.children].forEach((sw, i)=>{
+      sw.classList.toggle("active", i === player.colorIndex);
+    });
+    if(gameState === "playing" || force){
+      const hidden = isPlayerHidden();
+      statusValue.textContent = hidden ? "HIDDEN" : "EXPOSED";
+      statusValue.className = "value " + (hidden ? "hidden-state" : "exposed-state");
+    } else {
+      statusValue.textContent = "—";
+      statusValue.className = "value";
+    }
+    movesValue.textContent = moveCount;
+    const totalSec = Math.floor(elapsedMs/1000);
+    const mm = String(Math.floor(totalSec/60)).padStart(2,"0");
+    const ss = String(totalSec%60).padStart(2,"0");
+    timeValue.textContent = `${mm}:${ss}`;
+
+    // countdown bar shows time remaining until the color shifts on its own
+    if(nextColorChangeAt != null){
+      const remaining = Math.max(0, nextColorChangeAt - performance.now());
+      const frac = remaining / currentShiftIntervalMs;
+      shiftBar.style.width = (frac*100) + "%";
+      shiftBar.style.background = COLORS[nextColorIndex].hex;
+    } else {
+      shiftBar.style.width = "100%";
+      shiftBar.style.background = "var(--accent)";
+    }
+  }
+
+  // ---- Overlays ----
+  const introOverlay = document.getElementById("introOverlay");
+  const loseOverlay = document.getElementById("loseOverlay");
+  const winOverlay = document.getElementById("winOverlay");
+
+  document.getElementById("startBtn").addEventListener("click", ()=>{
+    introOverlay.classList.add("hidden");
+    gameState = "playing";
+    startTime = performance.now();
+    scheduleNextShift();
+  });
+  document.getElementById("restartLoseBtn").addEventListener("click", startOver);
+  document.getElementById("restartWinBtn").addEventListener("click", startOver);
+
+  function startOver(){
+    loseOverlay.classList.add("hidden");
+    winOverlay.classList.add("hidden");
+    resetGame();
+    gameState = "playing";
+    startTime = performance.now();
+    scheduleNextShift();
+  }
+
+  function triggerLose(){
+    gameState = "lost";
+    document.getElementById("loseTime").textContent = timeValue.textContent;
+    document.getElementById("loseMoves").textContent = moveCount;
+    loseOverlay.classList.remove("hidden");
+  }
+  function triggerWin(){
+    gameState = "won";
+    document.getElementById("winTime").textContent = timeValue.textContent;
+    document.getElementById("winMoves").textContent = moveCount;
+    winOverlay.classList.remove("hidden");
+  }
+
+  // ---- Update loop ----
+  function updatePlayer(){
+    let dx = 0, dy = 0;
+    if(keys["ArrowUp"] || keys["w"] || keys["W"]) dy -= 1;
+    if(keys["ArrowDown"] || keys["s"] || keys["S"]) dy += 1;
+    if(keys["ArrowLeft"] || keys["a"] || keys["A"]) dx -= 1;
+    if(keys["ArrowRight"] || keys["d"] || keys["D"]) dx += 1;
+
+    if(dx !== 0 || dy !== 0){
+      const len = Math.hypot(dx, dy);
+      dx = dx/len * CONFIG.playerSpeed;
+      dy = dy/len * CONFIG.playerSpeed;
+      const nx = Math.min(Math.max(player.x + dx, player.radius), canvas.width - player.radius);
+      const ny = Math.min(Math.max(player.y + dy, player.radius), canvas.height - player.radius);
+      const moved = Math.hypot(nx-player.x, ny-player.y);
+      player.x = nx; player.y = ny;
+      distanceAccum += moved;
+      while(distanceAccum >= 9){
+        distanceAccum -= 9;
+        moveCount++;
+      }
+    }
+
+    // goal check
+    if(Math.hypot(player.x-goalPx.x, player.y-goalPx.y) < player.radius + 14){
+      triggerWin();
+    }
+  }
+
+  function angleTo(ax,ay,bx,by){ return Math.atan2(by-ay, bx-ax); }
+  function angleDiff(a,b){
+    let d = a-b;
+    while(d > Math.PI) d -= Math.PI*2;
+    while(d < -Math.PI) d += Math.PI*2;
+    return Math.abs(d);
+  }
+
+  function updateGuards(){
+    const hidden = isPlayerHidden();
+    const coneHalf = CONFIG.coneHalfAngleDeg * Math.PI/180;
+
+    for(const g of guards){
+      // decay alert pulse for visuals
+      g.alertPulse = Math.max(0, g.alertPulse - 0.02);
+
+      const distToPlayer = Math.hypot(player.x-g.x, player.y-g.y);
+      const angToPlayer = angleTo(g.x,g.y, player.x,player.y);
+      const facingAng = Math.atan2(g.facing.y, g.facing.x);
+      const withinCone = distToPlayer <= CONFIG.visionRadius && angleDiff(angToPlayer, facingAng) <= coneHalf;
+      const canSee = withinCone && !hidden;
+
+      if(canSee){
+        g.state = "chase";
+        g.lastSeen = { x: player.x, y: player.y };
+        g.searchUntil = performance.now() + CONFIG.searchDurationMs;
+        g.alertPulse = 1;
+      } else if(g.state === "chase"){
+        // lost direct sight -> switch to searching last known position
+        if(performance.now() > g.searchUntil){
+          g.state = "patrol";
+          g.lastSeen = null;
+        } else {
+          g.state = "search";
+        }
+      } else if(g.state === "search" && performance.now() > g.searchUntil){
+        g.state = "patrol";
+        g.lastSeen = null;
+      }
+
+      if(g.state === "patrol"){
+        const target = g.waypoints[g.targetIndex];
+        const dx = target.x - g.x, dy = target.y - g.y;
+        const dist = Math.hypot(dx,dy);
+        if(dist < CONFIG.waypointArriveDist){
+          g.targetIndex = (g.targetIndex + 1) % g.waypoints.length;
+        } else {
+          const spd = CONFIG.guardPatrolSpeed;
+          g.facing = { x: dx/dist, y: dy/dist };
+          g.x += g.facing.x * spd;
+          g.y += g.facing.y * spd;
+        }
+      } else {
+        // chase or search: move toward player (chase) or last seen spot (search)
+        const target = (g.state === "chase") ? {x:player.x,y:player.y} : (g.lastSeen || {x:g.x,y:g.y});
+        const dx = target.x - g.x, dy = target.y - g.y;
+        const dist = Math.hypot(dx,dy);
+        if(dist > 2){
+          const spd = CONFIG.guardChaseSpeed;
+          g.facing = { x: dx/dist, y: dy/dist };
+          g.x += g.facing.x * spd;
+          g.y += g.facing.y * spd;
+        }
+      }
+
+      // catch check
+      if(!hidden){
+        const d = Math.hypot(player.x-g.x, player.y-g.y);
+        if(d < CONFIG.catchRadius + player.radius){
+          triggerLose();
+        }
+      }
+    }
+  }
+
+  // ---- Render ----
+  function drawGoal(t){
+    const pulse = 0.5 + 0.5*Math.sin(t/260);
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    const grad = ctx.createRadialGradient(goalPx.x,goalPx.y,2, goalPx.x,goalPx.y,22+pulse*6);
+    grad.addColorStop(0, "rgba(255,255,255,0.95)");
+    grad.addColorStop(0.4, "rgba(255,240,180,0.55)");
+    grad.addColorStop(1, "rgba(255,240,180,0)");
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(goalPx.x, goalPx.y, 22+pulse*6, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    ctx.strokeStyle = "rgba(255,255,255,0.9)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4,4]);
+    ctx.beginPath();
+    ctx.arc(goalPx.x, goalPx.y, 13, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawGuard(g, t){
+    const half = CONFIG.coneHalfAngleDeg * Math.PI/180;
+    const facingAng = Math.atan2(g.facing.y, g.facing.x);
+
+    // vision cone
+    ctx.save();
+    let coneColor;
+    if(g.state === "chase") coneColor = `rgba(255,71,87,${0.22 + g.alertPulse*0.12})`;
+    else if(g.state === "search") coneColor = "rgba(255,211,42,0.20)";
+    else coneColor = "rgba(255,255,255,0.11)";
+    ctx.fillStyle = coneColor;
+    ctx.beginPath();
+    ctx.moveTo(g.x, g.y);
+    ctx.arc(g.x, g.y, CONFIG.visionRadius, facingAng-half, facingAng+half);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    // guard body
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(g.x, g.y, 9, 0, Math.PI*2);
+    ctx.fillStyle = "#e8ecf1";
+    ctx.shadowColor = g.state === "chase" ? "rgba(255,71,87,0.9)" : "rgba(0,0,0,0.4)";
+    ctx.shadowBlur = g.state === "chase" ? 14 : 4;
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = g.state === "chase" ? "#ff4757" : "#333947";
+    ctx.stroke();
+    ctx.restore();
+
+    // state indicator
+    if(g.state === "chase"){
+      ctx.save();
+      ctx.fillStyle = "#ff4757";
+      ctx.font = "bold 14px " + getComputedStyle(document.body).getPropertyValue('--mono');
+      ctx.textAlign = "center";
+      ctx.fillText("!", g.x, g.y-16 - Math.sin(t/120)*2);
+      ctx.restore();
+    } else if(g.state === "search"){
+      ctx.save();
+      ctx.fillStyle = "#ffd32a";
+      ctx.font = "bold 13px " + getComputedStyle(document.body).getPropertyValue('--mono');
+      ctx.textAlign = "center";
+      ctx.fillText("?", g.x, g.y-16);
+      ctx.restore();
+    }
+  }
+
+  function drawPlayer(t){
+    const hidden = isPlayerHidden();
+    const hex = COLORS[player.colorIndex].hex;
+
+    ctx.save();
+    if(hidden){
+      // calm pulsing halo
+      const pulse = 0.5 + 0.5*Math.sin(t/300);
+      ctx.globalCompositeOperation = "lighter";
+      const grad = ctx.createRadialGradient(player.x,player.y,2, player.x,player.y, 20+pulse*4);
+      grad.addColorStop(0, hexToRgba(hex,0.55));
+      grad.addColorStop(1, hexToRgba(hex,0));
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(player.x, player.y, 20+pulse*4, 0, Math.PI*2);
+      ctx.fill();
+      ctx.globalCompositeOperation = "source-over";
+    }
+    ctx.restore();
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, player.radius, 0, Math.PI*2);
+    ctx.fillStyle = hex;
+    ctx.fill();
+
+    if(hidden){
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "rgba(255,255,255,0.85)";
+      ctx.stroke();
+    } else {
+      // sharp flicker outline when exposed
+      const flick = 0.6 + 0.4*Math.sin(t/70);
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = `rgba(255,255,255,${flick})`;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(player.x, player.y, player.radius+5, 0, Math.PI*2);
+      ctx.strokeStyle = `rgba(255,71,87,${0.5+0.4*flick})`;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([3,3]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.restore();
+  }
+
+  function hexToRgba(hex, a){
+    const v = hex.replace("#","");
+    const r = parseInt(v.substring(0,2),16);
+    const g = parseInt(v.substring(2,4),16);
+    const b = parseInt(v.substring(4,6),16);
+    return `rgba(${r},${g},${b},${a})`;
+  }
+
+  function render(t){
+    ctx.drawImage(zoneCanvas, 0, 0);
+    drawGoal(t);
+    for(const g of guards) drawGuard(g, t);
+    drawPlayer(t);
+  }
+
+  // ---- Main loop ----
+  function loop(t){
+    if(gameState === "playing"){
+      elapsedMs = performance.now() - startTime;
+      if(performance.now() >= nextColorChangeAt){
+        player.colorIndex = nextColorIndex;
+        scheduleNextShift();
+      }
+      updatePlayer();
+      if(gameState === "playing") updateGuards();
+      updateHUD();
+    }
+    render(t);
+    requestAnimationFrame(loop);
+  }
+
+  resetGame();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
